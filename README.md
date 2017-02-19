@@ -1,4 +1,4 @@
-<h1>Speaking Center Data Visualization Website!</h1>
+<h1>USF Speaking Center Data Visualization Website!</h1>
 
 
 <img src = "activity_by_the_hour_fall_2016.png" alt = "Activity by Hour" class = "inline"/>
