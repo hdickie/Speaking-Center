@@ -8,4 +8,6 @@ Speaking Center Data Visualization Website!
 
 <img src = "pics/activity_over_time_fall_2016.png" alt = "Activity over the whole semester" class = "inline"/>
 
-<a href = "pages/otherPage.html">Other Page</a>
+<a href = "pages/TotalHistory.html">Total History</a>
+<a href = "pages/LastSemester.html">Last Semester</a>
+<a href = "pages/SemesterInProgress.html">Semester in Progress</a>
