@@ -8,4 +8,4 @@
 
 <img src = "activity_over_time_fall_2016.png" alt = "Activity over the whole semester" class = "inline"/>
 
-<a href = "otherPage.md">Other Page</a>
+<a href = "otherPage.html">Other Page</a>
