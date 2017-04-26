@@ -28,10 +28,21 @@ ul {
     margin: 0;
     padding: 0;
     background-color: #000000;
+    overflow: hidden;
 }
 li {
 	display: inline;
+    float: left;
+    padding: 15px;
+}
+li a {
+	color: white;
+    text-decoration: none;
+}
+li a:hover{
+	color: yellow;
 }
 .active {
     color: white;
+    
 }
