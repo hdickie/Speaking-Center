@@ -11,22 +11,9 @@ body {
 	right:0;
 	bottom:0;
 	left:0;
+	background-color: #feebc6;
 }
-path.land {
-	fill: #000000;
-	stroke: none;
-}
-path.neighborhood {
-	fill: none;
-	stroke: white;
-	stroke-width: 1.5px;
-	pointer-events: none;
-}
-.active {
-	stroke: goldenrod !important;
-	stroke-width: 2.5px !important;
-}
-.page-text {
+.main-content {
 	margin-left: 80px;
 	margin-right: 80px;
 }
