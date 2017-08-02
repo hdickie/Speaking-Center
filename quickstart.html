@@ -106,11 +106,14 @@
         }).then(function(response) {
           var range = response.result;
           if (range.values.length > 0) {
-            appendPre('label, value:');
+            //appendPre('label, value:');
             for (i = 0; i < range.values.length; i++) {
               var row = range.values[i];
               // Print columns A and E, which correspond to indices 0 and 4.
-              appendPre(row[0] + ', ' + row[1]);
+              appendPre(row[0]);
+              for (j = 1 ; j < 18 ;j++){
+                appendPre(+ ', ' + row[j]);
+              }
             }
           } else {
             appendPre('No data found.');
