@@ -1,0 +1,514 @@
+---
+title: "Intake Form Analysis"
+author: "Hume Dickie"
+date: "December 10, 2017"
+output: html_document
+---
+
+```{r libs, include=FALSE}
+require(googlesheets)
+require(magrittr)
+require(ggplot2)
+require(gridExtra)
+require(stringdist)
+require(stringr)
+require(gplots)
+```
+
+```{r setup, include=FALSE}
+intake.form.sheetID <- '1eUxxEVagFv4nTGI4MMCFWXUiuIT2deUCs6-q__r19ko'
+first.valid.date <- strptime("2016-08-26",format="%Y-%m-%d") %>% as.POSIXct() %>% as.integer()
+
+gs_auth(token = "googlesheets_token.rds")
+gs.data.object <- gs_key(intake.form.sheetID)
+intake.data <- gs.data.object %>% gs_read(ws=1)
+
+bar.color <- "#fdbb30"
+text.color <- "#00543c"
+```
+
+```{r configVariables, include=FALSE}
+max.appt.count <- 600
+repeat.assignment.cutoff <- 5
+```
+
+### Appointment Count Over Time For Each Semester
+TODO save individual semester plots in a subfolder
+```{r betterTimeSeriesPlot, echo=FALSE}
+dates  <- intake.data$Date %>% strptime("%m/%d/%Y") %>% as.character()
+dates <- dates[which(dates > as.Date("2016-01-01"))]
+
+daily.counts <- table(dates %>% as.character())
+semester.days <- seq(as.Date("2016-8-1"), as.Date("2017-12-31"), by="days") %>% as.character()
+sel <- semester.days %in% (dates %>% as.character())
+
+for (zeroDay in semester.days[!sel]) {
+  daily.counts[zeroDay] <- 0
+}
+
+#sortsel
+dates <- daily.counts %>% names()
+values <- daily.counts %>% as.integer()
+
+daily.time.series <- cbind(dates,values) %>% as.data.frame()
+daily.time.series[,1] <- daily.time.series[,1] %>% as.Date()
+daily.time.series$values <- daily.time.series$values %>% as.character %>% as.numeric()
+
+daily.time.series <- daily.time.series[order(daily.time.series$dates),]
+daily.time.series$dateAsInt <- daily.time.series[,"dates"] %>% as.integer()
+
+
+#cut into semesters
+spring.starts <- seq(as.Date("2013/01/01"), Sys.Date(), by="years")
+spring.ends <- seq(as.Date("2013/05/31"), Sys.Date(), by="years")
+fall.starts <- seq(as.Date("2013/08/01"), Sys.Date(), by="years")
+fall.ends <- seq(as.Date("2013/12/31"), Sys.Date() + 180, by="years")
+
+define.semesters <- c(spring.starts,spring.ends,fall.starts,fall.ends) %>% sort()
+
+daily.time.series$sem <- rep("",nrow(daily.time.series))
+for (i in 1:(length(define.semesters)/2)) {
+  semester.data <- daily.time.series[which(as.Date(daily.time.series$dates) > define.semesters[[2*i-1]] & as.Date(daily.time.series$dates) < define.semesters[[2*i]]),]
+
+  if(nrow(semester.data) == 0) {
+    next
+  }
+  
+  if (i %% 2 == 0) {
+    semesterString <- paste("Spring ",semester.data[1,"dates"] %>% substr(1,4),sep="")
+  } else {
+    semesterString <- paste("Fall ",semester.data[1,"dates"] %>% substr(1,4),sep="")
+  }
+  
+  daily.time.series[which(as.Date(daily.time.series$dates) > define.semesters[[2*i-1]] & as.Date(daily.time.series$dates) < define.semesters[[2*i]]),"sem"] <- semesterString
+  
+}
+
+daily.time.series <- daily.time.series[which(daily.time.series$sem != ""),]
+sem.count.table <- table(daily.time.series$sem)
+non.empty.semesters <- names(sem.count.table)[sem.count.table > 10]
+
+#date to int and cumsum
+for(s in non.empty.semesters){
+    daily.time.series[which(daily.time.series$sem==s),"dateAsInt"] <- daily.time.series[which(daily.time.series$sem==s),"dateAsInt"] - min(daily.time.series[which(daily.time.series$sem==s),"dateAsInt"])
+    daily.time.series[which(daily.time.series$sem==s),"cumsum"] <- daily.time.series[which(daily.time.series$sem==s),"values"] %>% cumsum()
+}
+
+
+semester.time.series.plots <- list()
+overallPlot <- NULL
+for (i in 1:length(non.empty.semesters)) {
+  semester.time.series.plots[[i]] <- ggplot(aes(x=dateAsInt,y=cumsum,color=sem),data=daily.time.series[which(daily.time.series$sem==non.empty.semesters[[i]]),]) + geom_line(size=1.5)
+  
+  date.index.0 <- daily.time.series[which(daily.time.series$sem == non.empty.semesters[[i]] & daily.time.series$dateAsInt == 0),"dates"]
+  
+  x.label <- paste("Days Since: ",date.index.0,sep="")
+  plot.title <- non.empty.semesters[[i]]
+  
+  semester.time.series.plots[[i]] <- semester.time.series.plots[[i]] + labs(title=plot.title,subtitle=paste(daily.time.series[which(daily.time.series$sem==non.empty.semesters[[i]]),]$cumsum %>% max()," total appointments",sep="")) + labs(x=x.label) + labs(y="Appt Count")
+  
+}
+
+overallPlot <- ggplot(aes(x=dateAsInt,y=cumsum,color=sem),data=daily.time.series) + geom_line(size=1.5) +xlim(20,135) + ylim(0,max.appt.count) + labs(x="Days from January 2 or August 2",y="Appt Count") + ggtitle("Appointments Over Time",subtitle=paste("Total Appointments: ",sum(daily.time.series$values),sep=""))
+
+for(plot in semester.time.series.plots) {
+  print(plot)
+}
+
+print(overallPlot)
+```
+
+### Types of Assignments
+
+```{r cleanStrings, echo=FALSE}
+unique.assignments <- intake.data$Assignment %>% as.character() %>% tolower()  %>% unique()
+
+#at beginning or with whitespace on both sides
+filler.words <- list(c("of","in","a","to","the","an","or","and","on","about"))
+for (pat in filler.words %>% unlist()) {
+  pat <- paste(" ",pat," ",sep="") #in middle of sentence
+  unique.assignments <- gsub(pat," ",x=unique.assignments,ignore.case=TRUE)
+  
+  pat <- trimws(pat)
+  pat <- paste("^",pat," ",sep="") #start of line
+  unique.assignments <- gsub(pat,"",x=unique.assignments,ignore.case=TRUE)
+  
+  pat <- trimws(pat)
+  pat <- paste(" ",pat,"$",sep="") #end of line
+  unique.assignments <- gsub(pat,"",x=unique.assignments,ignore.case=TRUE)
+}
+
+#special case
+unique.assignments <- gsub("/"," ",x=unique.assignments,ignore.case=TRUE)
+
+#irrelevant words and symbols
+delete.patterns <- list(c("speech","presentation","project","[0-9]","#","[[:punct:]]","^n.*a$"))
+for (pat in delete.patterns %>% unlist()) {
+  unique.assignments <- gsub(pat,"",x=unique.assignments,ignore.case=TRUE)
+}
+
+unique.assignments <- gsub("[ ]+"," ",unique.assignments)
+unique.assignments <- trimws(unique.assignments)
+
+#some need to be toward the end
+unique.assignments <- unique.assignments[unique.assignments !=""]
+unique.assignments <- unique.assignments[!is.na(unique.assignments)]
+unique.assignments <- unique.assignments[nchar(unique.assignments %>% unlist()) > 2]
+
+unique.assignments <- unique.assignments %>% unique()
+```
+
+```{r getLevenshteinDistanceMatrix, echo=FALSE}
+getStringDistMatrix <- function(list.of.strings){
+  unique.strings <- unique(list.of.strings %>% unlist())
+  
+  n <- length(unique.strings)
+  string.dist.matrix <- matrix(nrow=n,ncol=n)
+  
+  start <- Sys.time()
+  for (i in 1:n) {
+    for (j in i:n) {
+      dist <- stringdist(unique.strings[[i]],unique.strings[[j]])
+      string.dist.matrix[i,j] <- dist
+      string.dist.matrix[j,i] <- dist
+      
+      if (n*i/2 + j %% 24600 == 0) {
+        partial <- Sys.time()
+        print((n*i + j)/(n**2))
+      }
+    }
+  }
+  
+  string.dist.matrix[is.na(string.dist.matrix)] <- 0
+  string.dist.matrix <- string.dist.matrix %>% apply(2,as.integer)
+  return(string.dist.matrix)
+}
+```
+
+```{r getDistFromSet}
+#instead of the distance from each other, use this method to get the distance from strings you know ahead of time should appear
+getDistFromSetMatrix <- function(list.of.strings,known.strings) {
+  unique.strings <- unique(list.of.strings %>% unlist())
+  
+  #defines an m x n matrix, where each column represents a known string
+  m <- length(unique.strings)
+  n <- length(known.strings)
+  string.dist.matrix <- matrix(nrow=m,ncol=n)
+  
+  #for each row, compute dist from each known string
+  for (i in 1:m) {
+    for (j in 1:n) {
+      dist <- stringdist(unique.strings[[i]],known.strings[[j]])
+      string.dist.matrix[i,j] <- dist
+    }
+  }
+  
+  
+  string.dist.matrix[is.na(string.dist.matrix)] <- 0
+  string.dist.matrix <- string.dist.matrix %>% apply(2,as.integer)
+  return(string.dist.matrix)
+}
+
+```
+
+```{r clusterStrings, echo = FALSE}
+full.dist.matrix <- getStringDistMatrix(unique.assignments)
+hc.assignments <- hclust(as.dist(full.dist.matrix))
+```
+
+```{r stringDistInsights, echo=FALSE}
+sizeOfGroup1 <- list()
+diff.size <- list()
+for (cutk in 1:length(unique.assignments)) {
+  sizeOfGroup1[[cutk]] <- which(cutree(hc.assignments,k=cutk) == 1) %>% length()
+  
+  if(cutk>1) {
+    diff.size[[cutk-1]] <- sizeOfGroup1[[cutk]] - sizeOfGroup1[[cutk-1]]
+  }
+}
+
+optimal.k <- which(diff.size == diff.size %>% unlist() %>% min()) + 1
+
+
+```
+
+```{r computeFinalOutput, include=FALSE}
+repeat.assignment.cutoff <- 5
+
+clusters.assignments <- data.frame(unique.assignments,cutree(hc.assignments,k=optimal.k))
+assignment.table <- clusters.assignments$cutree.hc.assignments..k...optimal.k. %>% table()
+repeat.assignments <- assignment.table[assignment.table > repeat.assignment.cutoff]
+repeat.assignments <- repeat.assignments[repeat.assignments != max(repeat.assignments)]
+#the largest one is usually nonsense
+repeat.indices <- repeat.assignments %>% sort() %>% rev() %>% names() %>% as.numeric()
+
+```
+
+
+This is common types of assignments, but not how many people come in with assignments of this type
+```{r outputClusters, echo=FALSE}
+for (i in 1:length(repeat.indices)) {
+  relevant.assignments.df <- clusters.assignments[which(clusters.assignments$cutree.hc.assignments..k...optimal.k. == repeat.indices[[i]]),]
+  
+  print("-----------------------------------------------------")
+  relevant.assignments.df$unique.assignments %>%as.character() %>% print()
+}
+```
+
+
+Now, let's make a bar chart of specific assignments that we're looking out for.
+I think I should grep to find composites of atomic assignment descriptors
+```{r plotKnownAssignments}
+known.assignments <- c("persuasive","informative","rogerian","paper","essay","final","extemporaneous","outline","comemmorative","culture","definition","first","group","introduction","memorize","problem solution","proposal","research","special occasion","storytelling","life story","praise blame","toefl","significant life story","research paper","significant life","epideictic","memorization","essay outline","final draft","oral interpretation","debate","final paper")
+
+dist.from.known.assignments <- getDistFromSetMatrix(unique.assignments,known.assignments)
+
+pretty.close <- which(dist.from.known.assignments <= 4)
+near.match <- (pretty.close/length(unique.assignments)) %>% ceiling()
+input.assignment  <- pretty.close %% length(unique.assignments)
+
+unique.assignments[input.assignment]
+
+unmatched <- rep(TRUE,length(unique.assignments))
+unmatched[input.assignment] <- FALSE
+
+unique.assignments[unmatched]
+```
+
+### Professors
+
+```{r cleanStringsProfs, echo=FALSE}
+unique.profs <- intake.data$Professor %>% as.character() %>% tolower()  %>% unique()
+
+delete.patterns <- list(c("professor","prof","[0-9]","#","[[:punct:]]","^n.*a$"))
+for (pat in delete.patterns %>% unlist()) {
+  unique.profs <- gsub(pat,"",x=unique.profs,ignore.case=TRUE)
+}
+
+unique.profs <- gsub("[ ]+"," ",unique.profs)
+unique.profs <- trimws(unique.profs)
+
+#some need to be toward the end
+unique.profs <- unique.profs[unique.profs !=""]
+unique.profs <- unique.profs[!is.na(unique.profs)]
+unique.profs <- unique.profs[nchar(unique.profs %>% unlist()) > 2]
+
+unique.profs <- unique.profs %>% unique()
+```
+
+Let's do substring matches searching for last names only!
+String distance from split on space! If one of them is super low call it a match!
+
+Angela Beasley
+Beste Yuksel
+Cynthia Shultes
+Deborah Callister
+Eric Christiansen
+Gina Stahlricco
+Jacquelyn Horton
+Leigh Meredith
+Lindsey Ayotte
+Lynn Perkins
+Maximilian Delaure
+Michael Rozendal
+Patricia Kalman
+Suzanne Pullens
+```{r distFromSetsProfs}
+#usf.professors <- c("hunt","horton","delore","delaure","beasly","callister","christian","ricco","rosendahl","ayotte","perkins","pullen","beasley","martin","meredith","sullivan","rozendal","beasely","yuksel","rosendal","stahl","kalman","gina","stahlricco","schultes","suzanne","cynthia")
+
+usf.professors <- c("angela","beasley","beste","yuksel","cynthia","shultes","deborah","callister","eric","christiansen","gina","stahlricco","jacquelyn","horton","leigh","meredith","lindsey","ayotte","lynn","perkins","maximilian","delaure","michael","rozendal","patricia","kalman","suzanne","pullens")
+
+unmatched.profs <- rep(TRUE,length(unique.profs))
+mapped.profs <- rep("",length(unique.profs))
+for(i in 1:length(unique.profs)) {
+  for(professor in usf.professors) {
+    #print(paste(professor," in ",unique.profs[[i]],"?",sep=""))
+    if (grepl(professor,unique.profs[[i]])) {
+      unmatched.profs[[i]] <- FALSE
+      mapped.profs[[i]] <- professor
+    }
+  }
+}
+
+#unmatched and has a space in it
+unique.profs[unmatched.profs & (lapply(unique.profs,grepl,pattern=" ") %>% unlist())] %>% sort()
+
+#same length as unique.rpfs, but every element is here a list of one or more strings
+for(i in 1:length(unique.profs)) {
+  splitname <- strsplit(unique.profs[[i]]," ")
+  for (partialname in splitname) {
+    if(!unmatched.profs[[i]]){
+      next
+    }
+    
+    dist.from.each.prof <- getDistFromSetMatrix(usf.professors,partialname)
+    
+    near.matches.indices <- which(dist.from.each.prof <= 3) %% length(usf.professors) %>% unique()
+    mapped.profs[[i]] <- usf.professors[near.matches.indices] %>% list()
+    
+    if(length(mapped.profs) > 0) {
+      unmatched.profs[[i]] <- FALSE
+    }
+  }
+}
+
+unique.profs[unmatched.profs]
+```
+
+```{r clusterStringsProfs, echo = FALSE}
+full.dist.matrix.profs <- getStringDistMatrix(unique.profs)
+hc.profs <- hclust(as.dist(full.dist.matrix.profs))
+```
+
+```{r stringDistInsightsProfs, echo=FALSE}
+sizeOfGroup1 <- list()
+diff.size <- list()
+for (cutk in 1:length(unique.profs)) {
+  sizeOfGroup1[[cutk]] <- which(cutree(hc.profs,k=cutk) == 1) %>% length()
+  
+  if(cutk>1) {
+    diff.size[[cutk-1]] <- sizeOfGroup1[[cutk]] - sizeOfGroup1[[cutk-1]]
+  }
+}
+
+optimal.k <- which(diff.size == diff.size %>% unlist() %>% min()) + 1
+
+
+```
+
+```{r computeFinalOutputProfs, include=FALSE}
+
+clusters.profs <- data.frame(unique.profs,cutree(hc.profs,k=optimal.k))
+profs.table <- clusters.profs$cutree.hc.profs..k...optimal.k. %>% table()
+repeat.profs <- profs.table[profs.table > 2]
+repeat.profs <- repeat.profs[repeat.profs != max(repeat.profs)]
+#the largest one is usually nonsense
+repeat.indices <- repeat.profs %>% sort() %>% rev() %>% names() %>% as.numeric()
+
+```
+
+
+This is common types of assignments, but not how many people come in with assignments of this type
+```{r outputClusters{Profs}, echo=FALSE}
+for (i in 1:length(repeat.indices)) {
+  relevant.profs.df <- clusters.profs[which(clusters.profs$cutree.hc.profs..k...optimal.k. == repeat.indices[[i]]),]
+  
+  print("-----------------------------------------------------")
+  relevant.profs.df$unique.profs %>% as.character() %>% print()
+}
+```
+
+### Classes
+
+```{r cleanStringsClasses, echo=FALSE}
+unique.classes <- intake.data$Class %>% as.character() %>% tolower()  %>% unique()
+
+#at beginning or with whitespace on both sides
+#filler.words <- list(c("of","in","a","to","the","an","or","and","on"))
+#for (pat in filler.words %>% unlist()) {
+#  pat <- paste(" ",pat," ",sep="") #in middle of sentence
+#  unique.assignments <- gsub(pat," ",x=unique.assignments,ignore.case=TRUE)
+#  
+#  pat <- trimws(pat)
+#  pat <- paste("^",pat," ",sep="") #start of line
+#  unique.assignments <- gsub(pat,"",x=unique.assignments,ignore.case=TRUE)
+#  
+#  pat <- trimws(pat)
+#  pat <- paste(" ",pat,"$",sep="") #end of line
+#  unique.assignments <- gsub(pat,"",x=unique.assignments,ignore.case=TRUE)
+#}
+
+#special case
+unique.classes <- gsub("/"," ",x=unique.classes,ignore.case=TRUE)
+
+##irrelevant words and symbols
+#delete.patterns <- list(c("speech","presentation","project","[0-9]","#","[[:punct:]]","^n.*a$"))
+#for (pat in delete.patterns %>% unlist()) {
+#  unique.assignments <- gsub(pat,"",x=unique.assignments,ignore.case=TRUE)
+#}
+
+unique.classes <- gsub("[ ]+"," ",unique.classes)
+unique.classes <- trimws(unique.classes)
+
+#some need to be toward the end
+unique.classes <- unique.classes[unique.classes !=""]
+unique.classes <- unique.classes[!is.na(unique.classes)]
+unique.classes <- unique.classes[nchar(unique.classes %>% unlist()) > 2]
+
+unique.classes <- unique.classes %>% unique()
+```
+
+
+```{r clusterStringsClasses, echo = FALSE}
+full.dist.matrix.class <- getStringDistMatrix(unique.classes)
+hc.classes <- hclust(as.dist(full.dist.matrix.class))
+```
+
+```{r stringDistInsightsClasses, echo=FALSE}
+sizeOfGroup1 <- list()
+diff.size <- list()
+for (cutk in 1:length(hc.classes)) {
+  sizeOfGroup1[[cutk]] <- which(cutree(hc.classes,k=cutk) == 1) %>% length()
+  
+  if(cutk>1) {
+    diff.size[[cutk-1]] <- sizeOfGroup1[[cutk]] - sizeOfGroup1[[cutk-1]]
+  }
+}
+
+optimal.k <- which(diff.size == diff.size %>% unlist() %>% min()) + 1
+
+
+```
+
+```{r computeFinalOutputClasses, include=FALSE}
+clusters.classes <- data.frame(unique.classes,cutree(hc.classes,k=optimal.k))
+classes.table <- clusters.classes$cutree.hc.classes..k...optimal.k. %>% table()
+repeat.classes <- classes.table[classes.table > 1]
+repeat.classes <- repeat.classes[repeat.classes != max(repeat.classes)]
+#the largest one is usually nonsense
+repeat.indices <- repeat.classes %>% sort() %>% rev() %>% names() %>% as.numeric()
+
+```
+
+
+This is common types of classes, but not how many people come in with assignments of this type
+```{r outputClustersClasses, echo=FALSE}
+for (i in 1:length(repeat.indices)) {
+  relevant.classes.df <- clusters.classes[which(clusters.classes$cutree.hc.classes..k...optimal.k. == repeat.indices[[i]]),]
+  
+  print("-----------------------------------------------------")
+  relevant.classes.df$unique.classes %>%as.character() %>% print()
+}
+```
+
+### Sign Up Method & Extra Credit/Required
+  TODO over time     
+      
+```{r summaryStats, echo=FALSE}
+reservedThrough <- table(intake.data$`Appointment Reserved Through`)
+required <- table(intake.data$`Is this visit required by your professor?`)
+#unique visitors
+#percent capacity
+
+reservedThrough.df <- cbind(reservedThrough %>% names(), reservedThrough %>% as.vector()) %>% as.data.frame()
+required.df  <- cbind(required %>% names(), required %>% as.vector()) %>% as.data.frame()
+
+reservedThrough.df$V2 <- reservedThrough.df$V2 %>% as.character() %>% as.numeric()
+required.df$V2 <- required.df$V2 %>% as.character() %>% as.numeric()
+
+x.label <- (reservedThrough.df$V2/sum(reservedThrough.df$V2)) %>% as.character() %>% substr(3,4) %>% paste("%",sep="")
+
+ggplot(reservedThrough.df,aes(x=V1,y=V2)) + geom_bar(stat="identity",fill=bar.color) + labs(x="Appointment Sign Up Method") + labs(y="Percent of Total")  + 
+    geom_text(data=reservedThrough.df,aes(x=V1,y=V2 %>% as.numeric(),label=x.label %>% as.character()),col=text.color,vjust=-0.25)
+
+x.label <- (required.df$V2/sum(required.df$V2)) %>% as.character() %>% substr(3,4) %>% paste("%",sep="")
+
+ggplot(required.df,aes(x=V1,y=V2)) + geom_bar(stat="identity",fill=bar.color) + labs(x="Requirement/Extra Credit Status") + labs(y="Percent of Total")  + 
+    geom_text(data=required.df,aes(x=V1,y=V2 %>% as.numeric(),label=x.label %>% as.character()),col=text.color,vjust=-0.25)
+```
+
+### Unique and Returning Students
+
+### Classes outside of Rhet
+
+### Reasons they come in

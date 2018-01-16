@@ -1,0 +1,451 @@
+---
+title: "Speaking Center Automated Intake Form Analysis"
+author: "Hume Dickie"
+date: "December 3, 2017"
+output: html_document
+---
+
+Yes
+```{r setup, include=FALSE}
+require(googlesheets)
+require(magrittr)
+require(ggplot2)
+require(gridExtra)
+require(stringdist)
+require(stringr)
+require(gplots)
+```
+
+Yes
+```{r setup2, include=FALSE}
+intake.form.sheetID <- '1eUxxEVagFv4nTGI4MMCFWXUiuIT2deUCs6-q__r19ko'
+first.valid.date <- strptime("2016-08-26",format="%Y-%m-%d") %>% as.POSIXct() %>% as.integer()
+
+gs_auth(token = "googlesheets_token.rds")
+gs.data.object <- gs_key(intake.form.sheetID)
+intake.data <- gs.data.object %>% gs_read(ws=1)
+
+bar.color <- "#fdbb30"
+text.color <- "#00543c"
+
+some.colors <- c("#99d8c9","#66c2a4", "#41ae76", "#238b45", "#005824")
+```
+
+```{r notSureIfNecessary, echo=FALSE}
+#token <- gs_auth(cache = FALSE)
+#saveRDS(token, file = "googlesheets_token.rds")
+
+```
+
+### Appointment Count Over Time For Each Semester
+Yes
+```{r betterTimeSeriesPlot, echo=FALSE}
+dates  <- intake.data$Date %>% strptime("%m/%d/%Y") %>% as.character()
+dates <- dates[which(dates > as.Date("2016-01-01"))]
+
+daily.counts <- table(dates %>% as.character())
+semester.days <- seq(as.Date("2016-8-1"), as.Date("2017-12-31"), by="days") %>% as.character()
+sel <- semester.days %in% (dates %>% as.character())
+
+for (zeroDay in semester.days[!sel]) {
+  daily.counts[zeroDay] <- 0
+}
+
+#sortsel
+dates <- daily.counts %>% names()
+values <- daily.counts %>% as.integer()
+
+daily.time.series <- cbind(dates,values) %>% as.data.frame()
+daily.time.series[,1] <- daily.time.series[,1] %>% as.Date()
+daily.time.series$values <- daily.time.series$values %>% as.character %>% as.numeric()
+
+daily.time.series <- daily.time.series[order(daily.time.series$dates),]
+daily.time.series$dateAsInt <- daily.time.series[,"dates"] %>% as.integer()
+
+
+#cut into semesters
+spring.starts <- seq(as.Date("2013/01/01"), Sys.Date(), by="years")
+spring.ends <- seq(as.Date("2013/05/31"), Sys.Date(), by="years")
+fall.starts <- seq(as.Date("2013/08/01"), Sys.Date(), by="years")
+fall.ends <- seq(as.Date("2013/12/31"), Sys.Date() + 180, by="years")
+
+define.semesters <- c(spring.starts,spring.ends,fall.starts,fall.ends) %>% sort()
+
+daily.time.series$sem <- rep("",nrow(daily.time.series))
+for (i in 1:(length(define.semesters)/2)) {
+  semester.data <- daily.time.series[which(as.Date(daily.time.series$dates) > define.semesters[[2*i-1]] & as.Date(daily.time.series$dates) < define.semesters[[2*i]]),]
+
+  if(nrow(semester.data) == 0) {
+    next
+  }
+  
+  if (i %% 2 == 0) {
+    semesterString <- paste("Spring ",semester.data[1,"dates"] %>% substr(1,4),sep="")
+  } else {
+    semesterString <- paste("Fall ",semester.data[1,"dates"] %>% substr(1,4),sep="")
+  }
+  
+  daily.time.series[which(as.Date(daily.time.series$dates) > define.semesters[[2*i-1]] & as.Date(daily.time.series$dates) < define.semesters[[2*i]]),"sem"] <- semesterString
+  
+}
+
+daily.time.series <- daily.time.series[which(daily.time.series$sem != ""),]
+sem.count.table <- table(daily.time.series$sem)
+non.empty.semesters <- names(sem.count.table)[sem.count.table > 10]
+
+#date to int and cumsum
+for(s in non.empty.semesters){
+    daily.time.series[which(daily.time.series$sem==s),"dateAsInt"] <- daily.time.series[which(daily.time.series$sem==s),"dateAsInt"] - min(daily.time.series[which(daily.time.series$sem==s),"dateAsInt"])
+    daily.time.series[which(daily.time.series$sem==s),"cumsum"] <- daily.time.series[which(daily.time.series$sem==s),"values"] %>% cumsum()
+}
+
+
+semester.time.series.plots <- list()
+overallPlot <- NULL
+for (i in 1:length(non.empty.semesters)) {
+  semester.time.series.plots[[i]] <- ggplot(aes(x=dateAsInt,y=cumsum,color=sem),data=daily.time.series[which(daily.time.series$sem==non.empty.semesters[[i]]),]) + geom_line(size=1.5)
+  
+  sem.start <- daily.time.series[which(as.Date(daily.time.series$dates) > define.semesters[[2*i-1]] & as.Date(daily.time.series$dates) < define.semesters[[2*i]]),"dates"] %>% as.Date %>% min()
+  sem.end <- daily.time.series[which(as.Date(daily.time.series$dates) > define.semesters[[2*i-1]] & as.Date(daily.time.series$dates) < define.semesters[[2*i]]),"dates"] %>% as.Date() %>% max()
+  
+  date.index.0 <- daily.time.series[which(as.Date(daily.time.series$dates) > define.semesters[[2*i-1]] & as.Date(daily.time.series$dates) < define.semesters[[2*i]] & daily.time.series$dateAsInt == 0),]
+  
+  x.label <- paste("Days Since: ",date.index.0,sep="")
+  plot.title <- paste("Semester: ",sem.start," thru ",sem.end,sep="")
+  
+  semester.time.series.plots[[i]] <- semester.time.series.plots[[i]] + labs(title=plot.title,subtitle=paste(daily.time.series[which(daily.time.series$sem==non.empty.semesters[[i]]),]$cumsum %>% max()," total appointments",sep="")) + labs(x=x.label) + labs(y="Appt Count")
+  
+  #find max cumsum?
+  
+  #build overall plot
+}
+
+overallPlot <- ggplot(aes(x=dateAsInt,y=cumsum,color=sem),data=daily.time.series) + geom_line(size=1.5) +xlim(20,150) + ylim(0,600)
+
+for(plot in semester.time.series.plots) {
+  print(plot)
+}
+
+##draw all together on one plot!
+
+```
+
+TODO: Show by semester and the cumulative conclusion
+```{r normalizeTimes, echo=FALSE}
+time.strings <- intake.data$Time %>% as.character()
+regex.stdTimes <- ".{2}:[03]0:00"
+sel <- !grepl(regex.stdTimes,time.strings)
+nonStdTimes <- intake.data[sel,]
+
+toOn <- list()
+#minutes 45 - 49
+toOn[[1]] <- ".{2}:4[56789]:00"
+
+# the minutes 50 - 09 should be rounded to on the hour
+toOn[[2]] <- ".{2}:[50].:00"
+
+#minutes 10 - 14
+toOn[[3]] <- ".{2}:1[01234]:00"
+
+toHalf <- list()
+#minutes 15 - 19
+toHalf[[1]] <- ".{2}:1[56789]:00"
+
+# the minutes 20 - 39 should be rounded to on the hour
+toHalf[[2]] <- ".{2}:[23].:00"
+
+#minutes 40 - 44
+toHalf[[3]] <- ".{2}:4[01234]:00"
+
+##change nonStdTimes to intake.data
+times <- intake.data$Time %>% as.character()
+
+sel.toOn <- grepl(toOn[[1]],times) | grepl(toOn[[2]],times) | grepl(toOn[[3]],times)
+sel.toHalf <- grepl(toHalf[[1]],times) | grepl(toHalf[[2]],times) | grepl(toHalf[[3]],times)
+
+for(i in 1:length(times[sel.toOn])) {
+  times[sel.toOn][[i]] <- gsub(":..:",":00:",times[sel.toOn][[i]])
+}
+for(i in 1:length(times[sel.toHalf])) {
+  times[sel.toHalf][[i]] <- gsub(":..:",":30:",times[sel.toHalf][[i]])
+}
+
+intake.data$Time <- times
+
+freq.table <- table(intake.data$Time)
+freq.table <- table(intake.data$Time)[which(names(freq.table)=="09:00:00"):which(names(freq.table)=="17:30:00")]
+
+#plot(freq.table)
+norm.times <- names(freq.table) %>% substr(1,5)
+norm.values <- as.vector(freq.table) 
+norm <- cbind(norm.times,norm.values) %>% as.data.frame()
+ggplot(norm,aes(x=norm.times,y=norm.values %>% as.numeric())) + geom_bar(stat="identity",fill=bar.color) + labs(x="Time of Day") + labs(y="Appt Count")  + 
+    geom_text(data=norm,aes(x=norm.times,y=norm.values %>% as.numeric(),label=norm.values %>% as.character()),col=text.color,vjust=-0.25)
+```
+
+TODO: Show by semester and cumulative conclusion
+```{r dayOfTheWeek, echo=FALSE}
+sundays <- seq(as.Date("2010/01/03"), Sys.Date(), by="weeks")
+mondays <- seq(as.Date("2010/01/04"), Sys.Date(), by="weeks")
+tuesdays <- seq(as.Date("2010/01/05"), Sys.Date(), by="weeks")
+wednesdays <- seq(as.Date("2010/01/06"), Sys.Date(), by="weeks")
+thursdays <- seq(as.Date("2010/01/07"), Sys.Date(), by="weeks")
+fridays <- seq(as.Date("2010/01/08"), Sys.Date(), by="weeks")
+saturdays <- seq(as.Date("2010/01/09"), Sys.Date(), by="weeks")
+
+classifyDay <- function(date.string){
+  if ((date.string %>% as.character() %>% as.Date(format="%m/%d/%Y")) %in% sundays) {
+    return("Sunday")
+  }
+  if ((date.string %>% as.character() %>% as.Date(format="%m/%d/%Y")) %in% mondays) {
+    return("Monday")
+  }
+  if ((date.string %>% as.character() %>% as.Date(format="%m/%d/%Y")) %in% tuesdays) {
+    return("Tuesday")
+  }
+  if ((date.string %>% as.character() %>% as.Date(format="%m/%d/%Y")) %in% wednesdays) {
+    return("Wednesday")
+  }
+  if ((date.string %>% as.character() %>% as.Date(format="%m/%d/%Y")) %in% thursdays) {
+    return("Thursday")
+  }
+  if ((date.string %>% as.character() %>% as.Date(format="%m/%d/%Y")) %in% fridays) {
+    return("Friday")
+  }
+  if ((date.string %>% as.character() %>% as.Date(format="%m/%d/%Y")) %in% saturdays) {
+    return("Saturday")
+  }
+  return("Fail")
+}
+
+dotw <- lapply(intake.data$Date,classifyDay)
+intake.data$dotw <- dotw %>% as.character() %>% as.factor()
+
+dotw.hist <- table(intake.data$dotw)
+dotw.hist <- dotw.hist[c("Monday","Tuesday","Wednesday","Thursday","Friday")]
+```
+
+TODO: Show by semester and cumulative conclusion
+```{r likelyToReturn, echo=FALSE}
+id.counts <- table(intake.data$StudentID)
+
+count.proportions <- list()
+counts <- 1:max(id.counts)
+population <- list()
+for( i in counts) {
+  population[[i]] <- length(id.counts[which(id.counts==i)])
+  count.proportions[[i]] <- length(id.counts[which(id.counts==i)])/length(id.counts)
+}
+
+apptFreq <- cbind(counts,count.proportions %>% unlist()) %>% as.data.frame()
+names(apptFreq) <- c("counts","count.proportions")
+
+x.label <- count.proportions %>% as.character() %>% substr(3,4) %>% paste("%",sep="")
+
+ggplot(aes(x=counts,y=count.proportions),data=apptFreq) + geom_bar(stat="identity",fill=bar.color) + labs(x="Number of Visits") + labs(y="Appt Count")  + 
+    geom_text(data=apptFreq,aes(x=counts,y=count.proportions %>% as.numeric(),label=x.label %>% as.character()),col=text.color,vjust=-0.25)
+
+rel.props <- list()
+for (i in 1:(length(count.proportions)-1)){
+  if (count.proportions[[i]] == 0) {
+    rel.props[[i]] <- 0
+  } else {
+    rel.props[[i]] <- count.proportions[[i+1]]/as.numeric(count.proportions[[i]])
+  }
+}
+rel.props <- rel.props %>% unlist()
+rel.counts <- 1:(length(count.proportions)-1)
+rel <- cbind(rel.counts,rel.props) %>% as.data.frame()
+names(rel) <- c("rel.counts","rel.props")
+
+
+#the interpretative validity of this chart is affected heavily by population size. For that reason, the first count # with a sample size less than 10 will be dropped. So will all greater count #s
+cutoff <-  which(population > 10) %>% max()
+
+x.label <- paste(rel[1:cutoff,]$rel.props %>% as.character() %>% substr(3,4),"%",sep="")
+
+ggplot(aes(x=rel.counts,y=rel.props),data=rel[1:cutoff,]) + geom_bar(stat="identity",fill=bar.color)   + labs(x="Number of Visits") + labs(y="Probability of signing up for another appointment")  + 
+    geom_text(data=rel[1:cutoff,],aes(x=rel.counts,y=rel.props %>% as.numeric(),label=x.label %>% as.character()),col=text.color,vjust=-0.25)
+```
+
+
+TODO Percent Capacity AND by semester and cumulative conclusion
+```{r summaryStats, echo=FALSE}
+reservedThrough <- table(intake.data$`Appointment Reserved Through`)
+required <- table(intake.data$`Is this visit required by your professor?`)
+#unique visitors
+#percent capacity
+
+reservedThrough.df <- cbind(reservedThrough %>% names(), reservedThrough %>% as.vector()) %>% as.data.frame()
+required.df  <- cbind(required %>% names(), required %>% as.vector()) %>% as.data.frame()
+
+reservedThrough.df$V2 <- reservedThrough.df$V2 %>% as.character() %>% as.numeric()
+required.df$V2 <- required.df$V2 %>% as.character() %>% as.numeric()
+
+x.label <- (reservedThrough.df$V2/sum(reservedThrough.df$V2)) %>% as.character() %>% substr(3,4) %>% paste("%",sep="")
+
+ggplot(reservedThrough.df,aes(x=V1,y=V2)) + geom_bar(stat="identity",fill=bar.color) + labs(x="Appointment Sign Up Method") + labs(y="Percent of Total")  + 
+    geom_text(data=reservedThrough.df,aes(x=V1,y=V2 %>% as.numeric(),label=x.label %>% as.character()),col=text.color,vjust=-0.25)
+
+x.label <- (required.df$V2/sum(required.df$V2)) %>% as.character() %>% substr(3,4) %>% paste("%",sep="")
+
+ggplot(required.df,aes(x=V1,y=V2)) + geom_bar(stat="identity",fill=bar.color) + labs(x="Requirement/Extra Credit Status") + labs(y="Percent of Total")  + 
+    geom_text(data=required.df,aes(x=V1,y=V2 %>% as.numeric(),label=x.label %>% as.character()),col=text.color,vjust=-0.25)
+```
+
+TODO: Incorporate historical data. (Just add the sheet don't hard code it). This requires the config document!
+```{r totalGrowth, echo=FALSE}
+#by semester, beginning in spring 2013
+historicalData <- c(69,95,47,138,165,253,274)
+
+```
+
+feel like they need attention. either delete or highlight: paper, draft, story, debate, persuasive, problem, solution, story, final
+```{r cleanStrings}
+unique.assignments <- intake.data$Assignment %>% as.character() %>% tolower()  %>% unique()
+
+#at beginning or with whitespace on both sides
+filler.words <- list(c("of","in","a","to","the","an","or","and","on"))
+for (pat in filler.words %>% unlist()) {
+  pat <- paste(" ",pat," ",sep="") #in middle of sentence
+  unique.assignments <- gsub(pat," ",x=unique.assignments,ignore.case=TRUE)
+  
+  pat <- trimws(pat)
+  pat <- paste("^",pat," ",sep="") #start of line
+  unique.assignments <- gsub(pat,"",x=unique.assignments,ignore.case=TRUE)
+  
+  pat <- trimws(pat)
+  pat <- paste(" ",pat,"$",sep="") #end of line
+  unique.assignments <- gsub(pat,"",x=unique.assignments,ignore.case=TRUE)
+}
+
+#special case
+unique.assignments <- gsub("/"," ",x=unique.assignments,ignore.case=TRUE)
+
+#irrelevant words and symbols
+delete.patterns <- list(c("speech","presentation","project","[0-9]","#","[[:punct:]]","^n.*a$"))
+for (pat in delete.patterns %>% unlist()) {
+  unique.assignments <- gsub(pat,"",x=unique.assignments,ignore.case=TRUE)
+}
+
+unique.assignments <- gsub("[ ]+"," ",unique.assignments)
+unique.assignments <- trimws(unique.assignments)
+
+#some need to be toward the end
+unique.assignments <- unique.assignments[unique.assignments !=""]
+unique.assignments <- unique.assignments[!is.na(unique.assignments)]
+unique.assignments <- unique.assignments[nchar(unique.assignments %>% unlist()) > 2]
+
+unique.assignments <- unique.assignments %>% unique()
+```
+
+
+```{r getLevenshteinDistanceMatrix}
+getStringDistMatrix <- function(list.of.strings){
+  unique.strings <- unique(list.of.strings %>% unlist())
+  
+  n <- length(unique.strings)
+  string.dist.matrix <- matrix(nrow=n,ncol=n)
+  
+  start <- Sys.time()
+  for (i in 1:n) {
+    for (j in i:n) {
+      dist <- stringdist(unique.strings[[i]],unique.strings[[j]])
+      string.dist.matrix[i,j] <- dist
+      string.dist.matrix[j,i] <- dist
+      
+      if (n*i/2 + j %% 24600 == 0) {
+        partial <- Sys.time()
+        print((n*i + j)/(n**2))
+      }
+    }
+  }
+  
+  string.dist.matrix[is.na(string.dist.matrix)] <- 0
+  string.dist.matrix <- string.dist.matrix %>% apply(2,as.integer)
+  return(string.dist.matrix)
+}
+```
+
+```{r plotDistanceDistro}
+plotDistanceDistro <- function(string.dist.matrix){
+  string.dist.matrix <- string.dist.matrix%>% as.data.frame()
+
+  max.string.dist <- string.dist.matrix %>% apply(2,as.numeric) %>% apply(2,max) %>% max()
+  
+  hist.vals <- list()
+  for ( i in 1:max.string.dist) {
+    hist.vals[[i]] <- string.dist.matrix[string.dist.matrix == i] %>% length()
+  }
+  
+  return(plot(1:max.string.dist,hist.vals,type="h"))
+}
+
+```
+
+```{r clusterStrings}
+full.dist.matrix <- getStringDistMatrix(unique.assignments)
+hc.assignments <- hclust(as.dist(full.dist.matrix))
+```
+
+
+I feel like looking at the structure each cluster is a good way to look at this.
+k = 1 seems like it will be the least dense
+```{r cutree}
+cutk <- 124
+hc.assignment.cutk <- data.frame(unique.assignments,cutree(hc.assignments,k=cutk))
+
+cluster.one.strings <- unique.assignments[which(cutree(hc.assignments,k=cutk) == 1)]
+
+k125.1.dist.matrix <- getStringDistMatrix(cluster.one.strings)
+```
+
+
+Perform hclust at every k and plot the size of group k = 1
+There was a local min of mean cluster radius at k = 22, maybe worth look at later. Otherwise 
+```{r stringDistInsights}
+sizeOfGroup1 <- list()
+diff.size <- list()
+for (cutk in 1:length(unique.assignments)) {
+  sizeOfGroup1[[cutk]] <- which(cutree(hc.assignments,k=cutk) == 1) %>% length()
+  
+  if(cutk>1) {
+    diff.size[[cutk-1]] <- sizeOfGroup1[[cutk]] - sizeOfGroup1[[cutk-1]]
+  }
+}
+
+optimal.k <- which(diff.size == diff.size %>% unlist() %>% min()) + 1
+
+
+```
+
+```{r outputClusters}
+repeat.assignment.cutoff <- 5
+
+clusters.assignments <- data.frame(unique.assignments,cutree(hc.assignments,k=optimal.k))
+assignment.table <- clusters.assignments$cutree.hc.assignments..k...optimal.k. %>% table()
+repeat.assignments <- assignment.table[assignment.table > repeat.assignment.cutoff]
+repeat.assignments <- repeat.assignments[repeat.assignments != max(repeat.assignments)]
+#the largest one is usually nonsense
+repeat.indices <- repeat.assignments %>% sort() %>% rev() %>% names() %>% as.numeric()
+
+
+
+for (i in 1:length(repeat.indices)) {
+  relevant.assignments.df <- clusters.assignments[which(clusters.assignments$cutree.hc.assignments..k...optimal.k. == repeat.indices[[i]]),]
+  
+  print(paste("Count: ",assignment.table[[repeat.indices[[i]]]]))
+  relevant.assignments.df$unique.assignments %>%as.character() %>% print()
+}
+```
+
+```{r superCoolHeatmapPlots!!!}
+setwd("C:/Users/Hume Dickie/Documents/string-distance-heatmaps")
+for (cutk in 1:length(unique.assignments)) {
+  png(str_pad(paste(cutk,".png",sep=""),pad="0",7))
+  heatmap.2(getStringDistMatrix(unique.assignments[which(cutree(hc.assignments,k=cutk) == 1)]))
+  title(paste("# Cluster k = ",cutk,sep=""),cex.main = 2, col.main = "green")
+  dev.off()
+  print(cutk/length(unique.assignments))
+}
+```
