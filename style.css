@@ -12,7 +12,14 @@ body {
 	bottom:0;
 	left:0;
 	background-color: #feebc6;
-	background-image: url("../pics/usf-background.jpg");
+	
+}
+html {
+	background: url("../pics/usf-background.jpg") no-repeat center center fixed;
+	-webkit-background-size: cover;
+	-moz-background-size: cover;
+	-o-background-size: cover;
+	background-size: cover;
 }
 .text-content {
 	margin-left: 80px;
