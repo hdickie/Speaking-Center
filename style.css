@@ -8,6 +8,7 @@ body {
 html {
 	background: url("pics/usf-background.jpg") no-repeat center center fixed;
 	background-repeat:no-repeat;
+	background-size:100%
 }
 .text-content {
 	margin-left: 80px;
