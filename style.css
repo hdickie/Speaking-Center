@@ -8,7 +8,6 @@ body {
 html {
 	background: url("pics/usf-background.jpg") no-repeat center center fixed;
 	background-repeat:no-repeat;
-	background-size: 100%;
 }
 .text-content {
 	margin-left: 80px;
@@ -46,4 +45,10 @@ li a:hover{
 .viz {
 	margin: auto;
 	width: 50%;
+}
+.centered {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
 }
