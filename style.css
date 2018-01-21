@@ -1,25 +1,14 @@
-.page-header {
-	color: #fff;
-	text-align: center;
-	background-color: #159957;
-	background-image: linear-gradient(0deg, #008000, #b39700);
-	padding: 3rem 4rem;
-}
 body {
 	margin:0;
 	top:0;
 	right:0;
 	bottom:0;
 	left:0;
-	background-color: #feebc6;
-	
 }
 html {
-	background: url("../pics/usf-background.jpg") no-repeat center center fixed;
-	-webkit-background-size: cover;
-	-moz-background-size: cover;
-	-o-background-size: cover;
-	background-size: cover;
+	background: url("pics/usf-background.jpg") no-repeat center center fixed;
+	background-repeat:no-repeat;
+	background-size: 100%;
 }
 .text-content {
 	margin-left: 80px;
