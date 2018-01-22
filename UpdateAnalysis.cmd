@@ -8,9 +8,9 @@ cd src
 
 git pull
 
-::re-render Driver.Rmd into index.html
+::re-render Driver.Rmd into liveanalysis.html
 cd src
-%R_Script% -e "rmarkdown::render('Driver.Rmd',output_file='C:/Users/Work/Desktop/Github/Senior-Project/liveanalysis.html')"
+%R_Script% -e "rmarkdown::render('Driver.Rmd',output_file='C:/Users/Work/Desktop/Github/Speaking-Center/liveanalysis.html')"
 
 cd %parent%
 git add *
