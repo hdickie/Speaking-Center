@@ -15,76 +15,114 @@ require(stringr)
 require(gplots)
 ```
 
-```{r setup, include=FALSE}
-intake.form.sheetID <- '1eUxxEVagFv4nTGI4MMCFWXUiuIT2deUCs6-q__r19ko'
-first.valid.date <- strptime("2016-08-26",format="%Y-%m-%d") %>% as.POSIXct() %>% as.integer()
+Maybe make read the sheet id from a file just in case of disaster?
+```{r connectToMasterSheet, include = FALSE}
+master.sheet.id <- '1Ic5yZDKdbFXXSajaa_KiR3pCPmf43yqeBFdWDAI-3fc'
 
-gs_auth(token = "googlesheets_token.rds")
-gs.data.object <- gs_key(intake.form.sheetID)
-intake.data <- gs.data.object %>% gs_read(ws=1)
+tryCatch({
+  gs_auth(token = "googlesheets_token.rds")
+},error=function(e){
+  gs_auth()
+})
 
-bar.color <- "#fdbb30"
-text.color <- "#00543c"
+gs.master.data.object <- gs_key(master.sheet.id)
+
+master.sheet.contents <- gs.master.data.object %>% gs_read(ws=1)
+sheet.keys <- master.sheet.contents$`Sheet Key`
+```
+
+```{r fetchData, include=FALSE}
+data.sheets <- list()
+for ( i in 1:length(sheet.keys)) {
+  
+  tryCatch({
+    data.sheets[[i]] <- gs_key(sheet.keys[[i]]) %>% gs_read(ws=1)
+  },error=function(e){
+    print("You must have access to the following Google Sheet:")
+    print(data.sheets[[i]] <- gs_key(sheet.keys[[i]]) %>% gs_read(ws=1))
+    gs_auth(new_user=TRUE)
+    stop()
+  })
+  
+  
+}
+
+intake.data <- data.sheets[[1]]
+if (length(data.sheets) > 1) {
+  for (i in 2:length(data.sheets)) {
+    intake.data <- rbind(intake.data,data.sheets[[i]])
+  }
+}
 ```
 
 ```{r configVariables, include=FALSE}
+first.valid.date <- strptime("2016-08-26",format="%Y-%m-%d")
+#first.valid.date <- strptime("2016-08-26",format="%Y-%m-%d") %>% as.POSIXct() %>% as.integer()
+
 max.appt.count <- 600
 repeat.assignment.cutoff <- 5
+
+bar.color <- "#fdbb30"
+text.color <- "#00543c"
 ```
 
 ### Appointment Count Over Time For Each Semester
 TODO save individual semester plots in a subfolder
 ```{r betterTimeSeriesPlot, echo=FALSE}
 dates  <- intake.data$Date %>% strptime("%m/%d/%Y") %>% as.character()
-dates <- dates[which(dates > as.Date("2016-01-01"))]
+dates <- dates[which(dates > first.valid.date)] #remove dates prior to first legit day
 
 daily.counts <- table(dates %>% as.character())
-semester.days <- seq(as.Date("2016-8-1"), as.Date("2017-12-31"), by="days") %>% as.character()
-sel <- semester.days %in% (dates %>% as.character())
+semester.days <- seq(first.valid.date, Sys.Date() %>% as.POSIXct(), by="days") %>% as.Date() %>% as.character()
+sel <- semester.days %in% (dates %>% as.character()) #select those days which are not in the data
 
+#insert missing days with a zero
 for (zeroDay in semester.days[!sel]) {
   daily.counts[zeroDay] <- 0
 }
 
-#sortsel
+#build time series
 dates <- daily.counts %>% names()
 values <- daily.counts %>% as.integer()
-
 daily.time.series <- cbind(dates,values) %>% as.data.frame()
 daily.time.series[,1] <- daily.time.series[,1] %>% as.Date()
 daily.time.series$values <- daily.time.series$values %>% as.character %>% as.numeric()
-
 daily.time.series <- daily.time.series[order(daily.time.series$dates),]
+
+#add date as integer to make stuff easier in the future
 daily.time.series$dateAsInt <- daily.time.series[,"dates"] %>% as.integer()
 
 
 #cut into semesters
-spring.starts <- seq(as.Date("2013/01/01"), Sys.Date(), by="years")
-spring.ends <- seq(as.Date("2013/05/31"), Sys.Date(), by="years")
-fall.starts <- seq(as.Date("2013/08/01"), Sys.Date(), by="years")
+spring.starts <- seq(as.Date("2013/01/01"), Sys.Date()+ 180, by="years")
+spring.ends <- seq(as.Date("2013/05/31"), Sys.Date() + 180, by="years")
+fall.starts <- seq(as.Date("2013/08/01"), Sys.Date()+ 180, by="years")
 fall.ends <- seq(as.Date("2013/12/31"), Sys.Date() + 180, by="years")
-
 define.semesters <- c(spring.starts,spring.ends,fall.starts,fall.ends) %>% sort()
 
-daily.time.series$sem <- rep("",nrow(daily.time.series))
-for (i in 1:(length(define.semesters)/2)) {
-  semester.data <- daily.time.series[which(as.Date(daily.time.series$dates) > define.semesters[[2*i-1]] & as.Date(daily.time.series$dates) < define.semesters[[2*i]]),]
+daily.time.series$sem <- rep("",nrow(daily.time.series)) #add semester column
+daily.time.series$year <- daily.time.series$dates %>% substr(0,4) # add year column
+daily.time.series$monthDay <- daily.time.series$dates %>% substr(6,length(daily.time.series$dates)) #add monthday
 
+#compute to which semester each date belongs
+# Note: some dates are not assigned aa semester (ex. July 25)
+for (i in seq(2,length(define.semesters),by=2)){
+  semester.data <- daily.time.series[which(as.Date(daily.time.series$dates) > define.semesters[[i-1]] & as.Date(daily.time.series$dates) < define.semesters[[i]]),]
+  
   if(nrow(semester.data) == 0) {
     next
   }
   
-  if (i %% 2 == 0) {
+  if (i %% 4 != 0) {
     semesterString <- paste("Spring ",semester.data[1,"dates"] %>% substr(1,4),sep="")
   } else {
     semesterString <- paste("Fall ",semester.data[1,"dates"] %>% substr(1,4),sep="")
   }
   
-  daily.time.series[which(as.Date(daily.time.series$dates) > define.semesters[[2*i-1]] & as.Date(daily.time.series$dates) < define.semesters[[2*i]]),"sem"] <- semesterString
-  
+  daily.time.series[which(as.Date(daily.time.series$dates) > define.semesters[[i-1]] & as.Date(daily.time.series$dates) < define.semesters[[i]]),"sem"] <- semesterString
 }
 
-daily.time.series <- daily.time.series[which(daily.time.series$sem != ""),]
+daily.time.series <- daily.time.series[which(daily.time.series$sem != ""),] #remove uncategorized dates
 sem.count.table <- table(daily.time.series$sem)
 non.empty.semesters <- names(sem.count.table)[sem.count.table > 10]
 
@@ -98,24 +136,43 @@ for(s in non.empty.semesters){
 semester.time.series.plots <- list()
 overallPlot <- NULL
 for (i in 1:length(non.empty.semesters)) {
-  semester.time.series.plots[[i]] <- ggplot(aes(x=dateAsInt,y=cumsum,color=sem),data=daily.time.series[which(daily.time.series$sem==non.empty.semesters[[i]]),]) + geom_line(size=1.5)
-  
-  date.index.0 <- daily.time.series[which(daily.time.series$sem == non.empty.semesters[[i]] & daily.time.series$dateAsInt == 0),"dates"]
-  
-  x.label <- paste("Days Since: ",date.index.0,sep="")
   plot.title <- non.empty.semesters[[i]]
   
-  semester.time.series.plots[[i]] <- semester.time.series.plots[[i]] + labs(title=plot.title,subtitle=paste(daily.time.series[which(daily.time.series$sem==non.empty.semesters[[i]]),]$cumsum %>% max()," total appointments",sep="")) + labs(x=x.label) + labs(y="Appt Count")
+  semester.time.series.plots[[i]] <-  ggplot(aes(x=dates,y=cumsum,color=sem),data=daily.time.series[which(daily.time.series$sem==non.empty.semesters[[i]]),]) + geom_line(size=1.5) + scale_x_date(date_breaks = "2 weeks", date_minor_breaks = "1 week", date_labels = "%m/%d") + labs(title=plot.title,subtitle=paste(daily.time.series[which(daily.time.series$sem==non.empty.semesters[[i]]),]$cumsum %>% max()," total appointments",sep=""),x="Date", y="Appt Count") + theme(legend.position="none")
+  
+  #date.index.0 <- daily.time.series[which(daily.time.series$sem == non.empty.semesters[[i]] & daily.time.series$dateAsInt == 0),"dates"]
+  
+  #x.label <- paste("Days Since: ",date.index.0,sep="")
+  #
+  
+  #semester.time.series.plots[[i]] <- semester.time.series.plots[[i]] + labs(title=plot.title,subtitle=paste(daily.time.series[which(daily.time.series$sem==non.empty.semesters[[i]]),]$cumsum %>% max()," total appointments",sep="")) + labs(x=x.label) + labs(y="Appt Count")
   
 }
 
-overallPlot <- ggplot(aes(x=dateAsInt,y=cumsum,color=sem),data=daily.time.series) + geom_line(size=1.5) +xlim(20,135) + ylim(0,max.appt.count) + labs(x="Days from January 2 or August 2",y="Appt Count") + ggtitle("Appointments Over Time",subtitle=paste("Total Appointments: ",sum(daily.time.series$values),sep=""))
+overallPlot <- ggplot(aes(x=monthDay,y=cumsum,color=year,group=year),data=daily.time.series) + geom_line(size=1.5) + labs(x="Date of Year",y="Appt Count",title="Year over Year Appointment Count",subtitle=paste("Total Appointments: ",sum(daily.time.series$values),sep=""))
 
-for(plot in semester.time.series.plots) {
-  print(plot)
+#determine order of output
+
+earliest.dates.on.plot <- matrix(nrow=length(semester.time.series.plots),ncol=2)
+for(i in 1:length(semester.time.series.plots)) {
+  earliest.dates.on.plot[i,1] <- i
+  earliest.dates.on.plot[i,2] <- semester.time.series.plots[[i]]$data$dates %>% min()
+}
+earliest.dates.on.plot <- earliest.dates.on.plot %>% as.data.frame()
+earliest.dates.on.plot <- earliest.dates.on.plot[order(earliest.dates.on.plot$V2),]
+
+#output plots in the correct order and save them
+setwd("../pics")
+for (i in earliest.dates.on.plot$V1) {
+  png(paste(semester.time.series.plots[[i]]$labels$title,".png",sep=""))
+  print(semester.time.series.plots[[i]])
+  dev.off()
 }
 
+png("overallPlot.png")
 print(overallPlot)
+dev.off()
+
 ```
 
 ### Types of Assignments
@@ -157,6 +214,8 @@ unique.assignments <- unique.assignments[nchar(unique.assignments %>% unlist()) 
 
 unique.assignments <- unique.assignments %>% unique()
 ```
+
+
 
 ```{r getLevenshteinDistanceMatrix, echo=FALSE}
 getStringDistMatrix <- function(list.of.strings){
@@ -259,7 +318,9 @@ for (i in 1:length(repeat.indices)) {
 Now, let's make a bar chart of specific assignments that we're looking out for.
 I think I should grep to find composites of atomic assignment descriptors
 ```{r plotKnownAssignments}
-known.assignments <- c("persuasive","informative","rogerian","paper","essay","final","extemporaneous","outline","comemmorative","culture","definition","first","group","introduction","memorize","problem solution","proposal","research","special occasion","storytelling","life story","praise blame","toefl","significant life story","research paper","significant life","epideictic","memorization","essay outline","final draft","oral interpretation","debate","final paper")
+#known.assignments <- c("persuasive","informative","rogerian","paper","essay","final","extemporaneous","outline","comemmorative","culture","definition","first","group","introduction","memorize","problem solution","proposal","research","special occasion","storytelling","life story","praise blame","toefl","significant life story","research paper","significant life","epideictic","memorization","essay outline","final draft","oral interpretation","debate","final paper")
+
+known.assignments <- master.sheet.contents$`Common Assignments` %>% tolower()
 
 dist.from.known.assignments <- getDistFromSetMatrix(unique.assignments,known.assignments)
 
