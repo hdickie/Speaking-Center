@@ -1,0 +1,13 @@
+#!/bin/bash
+####R_SCRIPT= whatever this ends up being
+
+#re-render Driver.Rmd into index.html
+####$R_SCRIPT -e "rmarkdown::render('Driver.Rmd',output_file='/home/pi/Desktop/Github/Speaking-Center/index.html')"
+
+git pull
+git add *
+git commit -m "Automated push."
+git push
+
+echo "Finished Successfully" 
+

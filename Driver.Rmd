@@ -69,7 +69,7 @@ text.color <- "#00543c"
 
 ### Appointment Count Over Time For Each Semester
 TODO save individual semester plots in a subfolder
-```{r betterTimeSeriesPlot, include=FALSE}
+```{r betterTimeSeriesPlot, echo=FALSE}
 dates  <- intake.data$Date %>% strptime("%m/%d/%Y") %>% as.character()
 dates <- dates[which(dates > first.valid.date)] #remove dates prior to first legit day
 
@@ -139,7 +139,7 @@ overallPlot <- NULL
 for (i in 1:length(non.empty.semesters)) {
   plot.title <- non.empty.semesters[[i]]
   
-  semester.time.series.plots[[i]] <-  ggplot(aes(x=dates,y=cumsum,color=sem),data=daily.time.series[which(daily.time.series$sem==non.empty.semesters[[i]]),]) + geom_line(size=1.5) + scale_x_date(date_breaks = "2 weeks", date_minor_breaks = "1 week", date_labels = "%m/%d") + labs(title=plot.title,subtitle=paste(daily.time.series[which(daily.time.series$sem==non.empty.semesters[[i]]),]$cumsum %>% max()," total appointments",sep=""),x="Date", y="Appt Count") + theme(legend.position="none")
+  semester.time.series.plots[[i]] <-  ggplot(aes(x=dates,y=cumsum,color=year),data=daily.time.series[which(daily.time.series$sem==non.empty.semesters[[i]]),]) + geom_line(size=1.5) + scale_x_date(date_breaks = "2 weeks", date_minor_breaks = "1 week", date_labels = "%m/%d") + labs(title=plot.title,subtitle=paste(daily.time.series[which(daily.time.series$sem==non.empty.semesters[[i]]),]$cumsum %>% max()," total appointments",sep=""),x="Date", y="Appt Count") + theme(legend.position="none")
   
   #date.index.0 <- daily.time.series[which(daily.time.series$sem == non.empty.semesters[[i]] & daily.time.series$dateAsInt == 0),"dates"]
   
@@ -165,15 +165,21 @@ earliest.dates.on.plot <- earliest.dates.on.plot[order(earliest.dates.on.plot$V2
 #output plots in the correct order and save them
 setwd("./pics")
 for (i in earliest.dates.on.plot$V1) {
+  
   png(paste(semester.time.series.plots[[i]]$labels$title,".png",sep=""))
-  print(semester.time.series.plots[[i]])
+  semester.time.series.plots[[i]]
   dev.off()
 }
 
 png("overallPlot.png")
-print(overallPlot)
+overallPlot
 dev.off()
 
+
+for (i in earliest.dates.on.plot$V1) {
+  plot(semester.time.series.plots[[i]])
+}
+plot(overallPlot)
 ```
 
 ### Types of Assignments
