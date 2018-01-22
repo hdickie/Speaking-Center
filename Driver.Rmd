@@ -163,7 +163,7 @@ earliest.dates.on.plot <- earliest.dates.on.plot %>% as.data.frame()
 earliest.dates.on.plot <- earliest.dates.on.plot[order(earliest.dates.on.plot$V2),]
 
 #output plots in the correct order and save them
-setwd("../pics")
+setwd("./pics")
 for (i in earliest.dates.on.plot$V1) {
   png(paste(semester.time.series.plots[[i]]$labels$title,".png",sep=""))
   print(semester.time.series.plots[[i]])
