@@ -33,12 +33,13 @@ sheet.keys <- master.sheet.contents$`Sheet Key`
 
 ```{r fetchData, include=FALSE}
 data.sheets <- list()
-for ( i in 1:length(sheet.keys)) {
+for ( i in 1:table(is.na(sheet.keys))[[1]]) {
   
   tryCatch({
     data.sheets[[i]] <- gs_key(sheet.keys[[i]]) %>% gs_read(ws=1)
   },error=function(e){
     print("You must have access to the following Google Sheet:")
+    print(sheet.keys[[i]])
     print(data.sheets[[i]] <- gs_key(sheet.keys[[i]]) %>% gs_read(ws=1))
     gs_auth(new_user=TRUE)
     stop()
