@@ -69,7 +69,7 @@ text.color <- "#00543c"
 
 ### Appointment Count Over Time For Each Semester
 TODO save individual semester plots in a subfolder
-```{r betterTimeSeriesPlot, echo=FALSE}
+```{r betterTimeSeriesPlot, include=FALSE}
 dates  <- intake.data$Date %>% strptime("%m/%d/%Y") %>% as.character()
 dates <- dates[which(dates > first.valid.date)] #remove dates prior to first legit day
 
@@ -245,7 +245,7 @@ getStringDistMatrix <- function(list.of.strings){
 }
 ```
 
-```{r getDistFromSet}
+```{r getDistFromSet, echo=FALSE}
 #instead of the distance from each other, use this method to get the distance from strings you know ahead of time should appear
 getDistFromSetMatrix <- function(list.of.strings,known.strings) {
   unique.strings <- unique(list.of.strings %>% unlist())
@@ -375,7 +375,7 @@ Maximilian Delaure
 Michael Rozendal
 Patricia Kalman
 Suzanne Pullens
-```{r distFromSetsProfs}
+```{r distFromSetsProfs, echo=FALSE}
 #usf.professors <- c("hunt","horton","delore","delaure","beasly","callister","christian","ricco","rosendahl","ayotte","perkins","pullen","beasley","martin","meredith","sullivan","rozendal","beasely","yuksel","rosendal","stahl","kalman","gina","stahlricco","schultes","suzanne","cynthia")
 
 usf.professors <- c("angela","beasley","beste","yuksel","cynthia","shultes","deborah","callister","eric","christiansen","gina","stahlricco","jacquelyn","horton","leigh","meredith","lindsey","ayotte","lynn","perkins","maximilian","delaure","michael","rozendal","patricia","kalman","suzanne","pullens")

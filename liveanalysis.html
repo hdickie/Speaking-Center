@@ -315,33 +315,9 @@ $(document).ready(function () {
 <section id="appointment-count-over-time-for-each-semester" class="level3">
 <h3>Appointment Count Over Time For Each Semester</h3>
 <p>TODO save individual semester plots in a subfolder</p>
-<pre><code>## png 
-##   2</code></pre>
 </section>
 <section id="types-of-assignments" class="level3">
 <h3>Types of Assignments</h3>
-<pre class="r"><code>#instead of the distance from each other, use this method to get the distance from strings you know ahead of time should appear
-getDistFromSetMatrix &lt;- function(list.of.strings,known.strings) {
-  unique.strings &lt;- unique(list.of.strings %&gt;% unlist())
-  
-  #defines an m x n matrix, where each column represents a known string
-  m &lt;- length(unique.strings)
-  n &lt;- length(known.strings)
-  string.dist.matrix &lt;- matrix(nrow=m,ncol=n)
-  
-  #for each row, compute dist from each known string
-  for (i in 1:m) {
-    for (j in 1:n) {
-      dist &lt;- stringdist(unique.strings[[i]],known.strings[[j]])
-      string.dist.matrix[i,j] &lt;- dist
-    }
-  }
-  
-  
-  string.dist.matrix[is.na(string.dist.matrix)] &lt;- 0
-  string.dist.matrix &lt;- string.dist.matrix %&gt;% apply(2,as.integer)
-  return(string.dist.matrix)
-}</code></pre>
 <p>This is common types of assignments, but not how many people come in with assignments of this type</p>
 <pre><code>## [1] &quot;-----------------------------------------------------&quot;
 ##  [1] &quot;introductory&quot; &quot;introduction&quot; &quot;impromptu&quot;    &quot;epideictic&quot;  
@@ -691,24 +667,6 @@ unique.assignments[unmatched]</code></pre>
 <h3>Professors</h3>
 <p>Let’s do substring matches searching for last names only! String distance from split on space! If one of them is super low call it a match!</p>
 <p>Angela Beasley Beste Yuksel Cynthia Shultes Deborah Callister Eric Christiansen Gina Stahlricco Jacquelyn Horton Leigh Meredith Lindsey Ayotte Lynn Perkins Maximilian Delaure Michael Rozendal Patricia Kalman Suzanne Pullens</p>
-<pre class="r"><code>#usf.professors &lt;- c(&quot;hunt&quot;,&quot;horton&quot;,&quot;delore&quot;,&quot;delaure&quot;,&quot;beasly&quot;,&quot;callister&quot;,&quot;christian&quot;,&quot;ricco&quot;,&quot;rosendahl&quot;,&quot;ayotte&quot;,&quot;perkins&quot;,&quot;pullen&quot;,&quot;beasley&quot;,&quot;martin&quot;,&quot;meredith&quot;,&quot;sullivan&quot;,&quot;rozendal&quot;,&quot;beasely&quot;,&quot;yuksel&quot;,&quot;rosendal&quot;,&quot;stahl&quot;,&quot;kalman&quot;,&quot;gina&quot;,&quot;stahlricco&quot;,&quot;schultes&quot;,&quot;suzanne&quot;,&quot;cynthia&quot;)
-
-usf.professors &lt;- c(&quot;angela&quot;,&quot;beasley&quot;,&quot;beste&quot;,&quot;yuksel&quot;,&quot;cynthia&quot;,&quot;shultes&quot;,&quot;deborah&quot;,&quot;callister&quot;,&quot;eric&quot;,&quot;christiansen&quot;,&quot;gina&quot;,&quot;stahlricco&quot;,&quot;jacquelyn&quot;,&quot;horton&quot;,&quot;leigh&quot;,&quot;meredith&quot;,&quot;lindsey&quot;,&quot;ayotte&quot;,&quot;lynn&quot;,&quot;perkins&quot;,&quot;maximilian&quot;,&quot;delaure&quot;,&quot;michael&quot;,&quot;rozendal&quot;,&quot;patricia&quot;,&quot;kalman&quot;,&quot;suzanne&quot;,&quot;pullens&quot;)
-
-unmatched.profs &lt;- rep(TRUE,length(unique.profs))
-mapped.profs &lt;- rep(&quot;&quot;,length(unique.profs))
-for(i in 1:length(unique.profs)) {
-  for(professor in usf.professors) {
-    #print(paste(professor,&quot; in &quot;,unique.profs[[i]],&quot;?&quot;,sep=&quot;&quot;))
-    if (grepl(professor,unique.profs[[i]])) {
-      unmatched.profs[[i]] &lt;- FALSE
-      mapped.profs[[i]] &lt;- professor
-    }
-  }
-}
-
-#unmatched and has a space in it
-unique.profs[unmatched.profs &amp; (lapply(unique.profs,grepl,pattern=&quot; &quot;) %&gt;% unlist())] %&gt;% sort()</code></pre>
 <pre><code>##  [1] &quot;alesandra casar&quot;    &quot;arnolfo kathleen a&quot; &quot;ben linzer&quot;        
 ##  [4] &quot;cathy kabor&quot;        &quot;christian thompson&quot; &quot;daniel husman&quot;     
 ##  [7] &quot;david batstone&quot;     &quot;david holler&quot;       &quot;devon c holmes&quot;    
@@ -732,26 +690,6 @@ unique.profs[unmatched.profs &amp; (lapply(unique.profs,grepl,pattern=&quot; &qu
 ## [61] &quot;stahl rico&quot;         &quot;sthal haven&quot;        &quot;susan pullen&quot;      
 ## [64] &quot;suznne pullen&quot;      &quot;suzzanne pullin&quot;    &quot;tika lamsal&quot;       
 ## [67] &quot;todd slingsby&quot;      &quot;ursala aldana&quot;      &quot;wan liu&quot;</code></pre>
-<pre class="r"><code>#same length as unique.rpfs, but every element is here a list of one or more strings
-for(i in 1:length(unique.profs)) {
-  splitname &lt;- strsplit(unique.profs[[i]],&quot; &quot;)
-  for (partialname in splitname) {
-    if(!unmatched.profs[[i]]){
-      next
-    }
-    
-    dist.from.each.prof &lt;- getDistFromSetMatrix(usf.professors,partialname)
-    
-    near.matches.indices &lt;- which(dist.from.each.prof &lt;= 3) %% length(usf.professors) %&gt;% unique()
-    mapped.profs[[i]] &lt;- usf.professors[near.matches.indices] %&gt;% list()
-    
-    if(length(mapped.profs) &gt; 0) {
-      unmatched.profs[[i]] &lt;- FALSE
-    }
-  }
-}
-
-unique.profs[unmatched.profs]</code></pre>
 <pre><code>## character(0)</code></pre>
 <p>This is common types of assignments, but not how many people come in with assignments of this type</p>
 <pre><code>## [1] &quot;-----------------------------------------------------&quot;
